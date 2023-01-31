@@ -1,99 +1,319 @@
-import base64
-import os
-from io import BytesIO
-
-import matplotlib.pyplot as plt
+import io
 import pandas as pd
 import requests
-from wordcloud import STOPWORDS, WordCloud
+import boto3
+import json
+from dagster import asset
 
-from dagster import MetadataValue, OpExecutionContext, asset
+@asset(group_name="hackernews")
+def airlineurl():
+    airline_url = "https://think.cs.vt.edu/corgis/datasets/json/airlines/airlines.json"
+    airlines = requests.get(airline_url).json()
+    return airlines
 
+@asset(group_name="hackernews")
+def airportdf(airlineurl) -> pd.DataFrame:
+    return pd.DataFrame(airlineurl, columns=["Code","Name"])
 
-@asset(group_name="hackernews", compute_kind="HackerNews API")
-def hackernews_topstory_ids() -> pd.DataFrame:
-    """
-    Get up to 500 top stories from the HackerNews topstories endpoint.
+@asset(group_name="hackernews")
+def airport(airlineurl, airportdf: pd.DataFrame) -> pd.DataFrame:
+    lenght = len(airlineurl)
+    for item_id in range(lenght):
+        # airport
+        airportdf["Code"][item_id] = airlineurl[item_id]["Airport"]["Code"]
+        airportdf["Name"][item_id] = airlineurl[item_id]["Airport"]["Name"]
+    return airportdf
 
-    API Docs: https://github.com/HackerNews/API#new-top-and-best-stories
-    """
-    newstories_url = "https://hacker-news.firebaseio.com/v0/topstories.json"
-    top_500_newstories = requests.get(newstories_url).json()
-    return pd.DataFrame(top_500_newstories, columns=["item_ids"])
+@asset(group_name="hackernews")
+def timesdf(airlineurl) -> pd.DataFrame:
+    return pd.DataFrame(airlineurl, columns=["Airport","Label","Month","Month Name","Year"])
 
+@asset(group_name="hackernews")
+def times(airlineurl, timesdf: pd.DataFrame) -> pd.DataFrame:
+    lenght = len(airlineurl)
+    for item_id in range(lenght):
+        timesdf["Airport"][item_id] = airlineurl[item_id]["Airport"]["Code"]
+        timesdf["Label"][item_id] = airlineurl[item_id]["Time"]["Label"]
+        timesdf["Month"][item_id] = airlineurl[item_id]["Time"]["Month"]
+        timesdf["Month Name"][item_id] = airlineurl[item_id]["Time"]["Month Name"]
+        timesdf["Year"][item_id] = airlineurl[item_id]["Time"]["Year"]
+    return timesdf
 
-@asset(group_name="hackernews", compute_kind="HackerNews API")
-def hackernews_topstories(
-    context: OpExecutionContext, hackernews_topstory_ids: pd.DataFrame
-) -> pd.DataFrame:
-    """
-    Get items based on story ids from the HackerNews items endpoint. It may take 1-2 minutes to fetch all 500 items.
+@asset(group_name="hackernews")
+def delaysdf(airlineurl) -> pd.DataFrame:
+    return pd.DataFrame(airlineurl, columns=["Airport","Carrier","Late Aircraft","National Aviation System","Security","Weather"])
 
-    API Docs: https://github.com/HackerNews/API#items
-    """
+@asset(group_name="hackernews")
+def delays(airlineurl, delaysdf: pd.DataFrame) -> pd.DataFrame:
+    lenght = len(airlineurl)
+    for item_id in range(lenght):
+        delaysdf["Airport"][item_id] = airlineurl[item_id]["Airport"]["Code"]
+        delaysdf["Carrier"][item_id] = airlineurl[item_id]["Statistics"]["# of Delays"]["Carrier"]
+        delaysdf["Late Aircraft"][item_id] = airlineurl[item_id]["Statistics"]["# of Delays"]["Late Aircraft"]
+        delaysdf["National Aviation System"][item_id] = airlineurl[item_id]["Statistics"]["# of Delays"]["National Aviation System"]
+        delaysdf["Security"][item_id] = airlineurl[item_id]["Statistics"]["# of Delays"]["Security"]
+        delaysdf["Weather"][item_id] = airlineurl[item_id]["Statistics"]["# of Delays"]["Weather"]
+    return delaysdf
 
-    results = []
-    for item_id in hackernews_topstory_ids["item_ids"]:
-        item = requests.get(f"https://hacker-news.firebaseio.com/v0/item/{item_id}.json").json()
-        results.append(item)
-        if len(results) % 20 == 0:
-            context.log.info(f"Got {len(results)} items so far.")
+@asset(group_name="hackernews")
+def carriersdf(airlineurl) -> pd.DataFrame:
+    return pd.DataFrame(airlineurl, columns=["Airport","Names","Total"])
 
-    df = pd.DataFrame(results)
+@asset(group_name="hackernews")
+def carries(airlineurl, carriersdf: pd.DataFrame) -> pd.DataFrame:
+    lenght = len(airlineurl)
+    for item_id in range(lenght):
+        carriersdf["Airport"][item_id] = airlineurl[item_id]["Airport"]["Code"]
+        carriersdf["Names"][item_id] = airlineurl[item_id]["Statistics"]["Carriers"]["Names"]
+        carriersdf["Total"][item_id] = airlineurl[item_id]["Statistics"]["Carriers"]["Total"]
+    return carriersdf
 
-    # Dagster supports attaching arbitrary metadata to asset materializations. This metadata will be
-    # shown in the run logs and also be displayed on the "Activity" tab of the "Asset Details" page in the UI.
-    # This metadata would be useful for monitoring and maintaining the asset as you iterate.
-    # Read more about in asset metadata in https://docs.dagster.io/concepts/assets/software-defined-assets#recording-materialization-metadata
-    context.add_output_metadata(
-        {
-            "num_records": len(df),
-            "preview": MetadataValue.md(df.head().to_markdown()),
-        }
-    )
-    return df
+@asset(group_name="hackernews")
+def flightsdf(airlineurl) -> pd.DataFrame:
+    return pd.DataFrame(airlineurl, columns=["Airport","Cancelled","Delayed","Diverted","On Time","Total"])
 
+@asset(group_name="hackernews")
+def flights(airlineurl, flightsdf: pd.DataFrame) -> pd.DataFrame:
+    lenght = len(airlineurl)
+    for item_id in range(lenght):
+        flightsdf["Airport"][item_id] = airlineurl[item_id]["Airport"]["Code"]
+        flightsdf["Cancelled"][item_id] = airlineurl[item_id]["Statistics"]["Flights"]["Cancelled"]
+        flightsdf["Delayed"][item_id] = airlineurl[item_id]["Statistics"]["Flights"]["Delayed"]
+        flightsdf["Diverted"][item_id] = airlineurl[item_id]["Statistics"]["Flights"]["Diverted"]
+        flightsdf["On Time"][item_id] = airlineurl[item_id]["Statistics"]["Flights"]["On Time"]
+        flightsdf["Total"][item_id] = airlineurl[item_id]["Statistics"]["Flights"]["Total"]
+    return flightsdf
 
-@asset(group_name="hackernews", compute_kind="Plot", required_resource_keys={"s3"})
-def hackernews_topstories_word_cloud(
-    context: OpExecutionContext, hackernews_topstories: pd.DataFrame
-) -> None:
-    """
-    Exploratory analysis: Generate a word cloud from the current top 500 HackerNews top stories.
-    Embed the plot into a Markdown metadata for quick view.
+@asset(group_name="hackernews")
+def minutesdf(airlineurl) -> pd.DataFrame:
+    return pd.DataFrame(airlineurl, columns=["Airport","Carrier","Late Aircraft","National Aviation System","Security","Total","Weather"])
 
-    Read more about how to create word clouds in http://amueller.github.io/word_cloud/.
-    """
-    stopwords = set(STOPWORDS)
-    stopwords.update(["Ask", "Show", "HN"])
-    titles_text = " ".join([str(item) for item in hackernews_topstories["title"]])
-    titles_cloud = WordCloud(stopwords=stopwords, background_color="white").generate(titles_text)
+@asset(group_name="hackernews")
+def minutes(airlineurl, minutesdf: pd.DataFrame) -> pd.DataFrame:
+    lenght = len(airlineurl)
+    for item_id in range(lenght):
+        minutesdf["Airport"][item_id] = airlineurl[item_id]["Airport"]["Code"]
+        minutesdf["Carrier"][item_id] = airlineurl[item_id]["Statistics"]["Minutes Delayed"]["Carrier"]
+        minutesdf["Late Aircraft"][item_id] = airlineurl[item_id]["Statistics"]["Minutes Delayed"]["Late Aircraft"]
+        minutesdf["National Aviation System"][item_id] = airlineurl[item_id]["Statistics"]["Minutes Delayed"]["National Aviation System"]
+        minutesdf["Security"][item_id] = airlineurl[item_id]["Statistics"]["Minutes Delayed"]["Security"]
+        minutesdf["Total"][item_id] = airlineurl[item_id]["Statistics"]["Minutes Delayed"]["Total"]
+        minutesdf["Weather"][item_id] = airlineurl[item_id]["Statistics"]["Minutes Delayed"]["Weather"]
+    return minutesdf
+    
 
-    # Generate the word cloud image
-    plt.figure(figsize=(8, 8), facecolor=None)
-    plt.imshow(titles_cloud, interpolation="bilinear")
-    plt.axis("off")
-    plt.tight_layout(pad=0)
+@asset(group_name="hackernews", required_resource_keys={"s3"})
+def upload_airport(airport: pd.DataFrame) -> None:
 
-    # Save the image to a buffer and embed the image into Markdown content for quick view
-    buffer = BytesIO()
-    plt.savefig(buffer, format="png")
-    image_data = base64.b64encode(buffer.getvalue())
-    md_content = f"![img](data:image/png;base64,{image_data.decode()})"
+    # Get API Keys
+    content = open('D:/dagster_project/config.json')
+    config = json.load(content)
+    access_key = config['access_key']
+    secret_access_key = config['secret_access_key']
 
-    # Also, upload the image to S3
-    bucket_name = os.environ.get("S3_BUCKET")
-    bucket_location = context.resources.s3.get_bucket_location(Bucket=bucket_name)[
-        "LocationConstraint"
-    ]
-    file_name = "hackernews_topstories_word_cloud.png"
-    context.resources.s3.upload_fileobj(buffer, bucket_name, file_name)
-    s3_path = f"https://s3.{bucket_location}.amazonaws.com/{bucket_name}/{file_name}"
-    context.add_output_metadata(
-        {
-            # Attach the Markdown content and s3 file path as metadata to the asset
-            # Read about more metadata types in https://docs.dagster.io/_apidocs/ops#metadata-types
-            "plot": MetadataValue.md(md_content),
-            "plot_s3_path": MetadataValue.url(s3_path),
-        }
-    )
+    try:
+        rows_imported = 0
+        # save to s3
+        upload_file_bucket = 'dagstertest2'
+        upload_file = 'airport/' + f"airport"
+        filepath =  upload_file + ".csv"
+        
+        s3_client = boto3.client('s3', aws_access_key_id=access_key, aws_secret_access_key=secret_access_key,region_name='us-east-2')
+        with io.StringIO() as csv_buffer:
+            airport.to_csv(csv_buffer, index=False, header=False)
+
+            response = s3_client.put_object(
+                Bucket=upload_file_bucket, Key=filepath, Body=csv_buffer.getvalue()
+            )
+
+            status = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+
+            if status == 200:
+                print(f"Successful S3 put_object response. Status - {status}")
+            else:
+                print(f"Unsuccessful S3 put_object response. Status - {status}")
+            rows_imported += len(airport)
+            print("Data imported successful")
+
+    except Exception as e:
+        print("Data load error: " + str(e))
+
+@asset(group_name="hackernews", required_resource_keys={"s3"})
+def upload_times(times: pd.DataFrame) -> None:
+
+    # Get API Keys
+    content = open('D:/dagster_project/config.json')
+    config = json.load(content)
+    access_key = config['access_key']
+    secret_access_key = config['secret_access_key']
+
+    try:
+        rows_imported = 0
+        # save to s3
+        upload_file_bucket = 'dagstertest2'
+        upload_file = 'times/' + f"times"
+        filepath =  upload_file + ".csv"
+        
+        s3_client = boto3.client('s3', aws_access_key_id=access_key, aws_secret_access_key=secret_access_key,region_name='us-east-2')
+        with io.StringIO() as csv_buffer:
+            times.to_csv(csv_buffer, index=False, header=False)
+
+            response = s3_client.put_object(
+                Bucket=upload_file_bucket, Key=filepath, Body=csv_buffer.getvalue()
+            )
+
+            status = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+
+            if status == 200:
+                print(f"Successful S3 put_object response. Status - {status}")
+            else:
+                print(f"Unsuccessful S3 put_object response. Status - {status}")
+            rows_imported += len(times)
+            print("Data imported successful")
+
+    except Exception as e:
+        print("Data load error: " + str(e))
+
+@asset(group_name="hackernews", required_resource_keys={"s3"})
+def upload_delays(delays: pd.DataFrame) -> None:
+
+    # Get API Keys
+    content = open('D:/dagster_project/config.json')
+    config = json.load(content)
+    access_key = config['access_key']
+    secret_access_key = config['secret_access_key']
+
+    try:
+        rows_imported = 0
+        # save to s3
+        upload_file_bucket = 'dagstertest2'
+        upload_file = 'delays/' + f"delays"
+        filepath =  upload_file + ".csv"
+        
+        s3_client = boto3.client('s3', aws_access_key_id=access_key, aws_secret_access_key=secret_access_key,region_name='us-east-2')
+        with io.StringIO() as csv_buffer:
+            delays.to_csv(csv_buffer, index=False, header=False)
+
+            response = s3_client.put_object(
+                Bucket=upload_file_bucket, Key=filepath, Body=csv_buffer.getvalue()
+            )
+
+            status = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+
+            if status == 200:
+                print(f"Successful S3 put_object response. Status - {status}")
+            else:
+                print(f"Unsuccessful S3 put_object response. Status - {status}")
+            rows_imported += len(delays)
+            print("Data imported successful")
+
+    except Exception as e:
+        print("Data load error: " + str(e))
+
+@asset(group_name="hackernews", required_resource_keys={"s3"})
+def upload_carries(carries: pd.DataFrame) -> None:
+
+    # Get API Keys
+    content = open('D:/dagster_project/config.json')
+    config = json.load(content)
+    access_key = config['access_key']
+    secret_access_key = config['secret_access_key']
+
+    try:
+        rows_imported = 0
+        # save to s3
+        upload_file_bucket = 'dagstertest2'
+        upload_file = 'carries/' + f"carries"
+        filepath =  upload_file + ".csv"
+        
+        s3_client = boto3.client('s3', aws_access_key_id=access_key, aws_secret_access_key=secret_access_key,region_name='us-east-2')
+        with io.StringIO() as csv_buffer:
+            carries.to_csv(csv_buffer, index=False, header=False)
+
+            response = s3_client.put_object(
+                Bucket=upload_file_bucket, Key=filepath, Body=csv_buffer.getvalue()
+            )
+
+            status = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+
+            if status == 200:
+                print(f"Successful S3 put_object response. Status - {status}")
+            else:
+                print(f"Unsuccessful S3 put_object response. Status - {status}")
+            rows_imported += len(carries)
+            print("Data imported successful")
+
+    except Exception as e:
+        print("Data load error: " + str(e))
+
+@asset(group_name="hackernews", required_resource_keys={"s3"})
+def upload_flights(flights: pd.DataFrame) -> None:
+
+    # Get API Keys
+    content = open('D:/dagster_project/config.json')
+    config = json.load(content)
+    access_key = config['access_key']
+    secret_access_key = config['secret_access_key']
+
+    try:
+        rows_imported = 0
+        # save to s3
+        upload_file_bucket = 'dagstertest2'
+        upload_file = 'flights/' + f"flights"
+        filepath =  upload_file + ".csv"
+        
+        s3_client = boto3.client('s3', aws_access_key_id=access_key, aws_secret_access_key=secret_access_key,region_name='us-east-2')
+        with io.StringIO() as csv_buffer:
+            flights.to_csv(csv_buffer, index=False, header=False)
+
+            response = s3_client.put_object(
+                Bucket=upload_file_bucket, Key=filepath, Body=csv_buffer.getvalue()
+            )
+
+            status = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+
+            if status == 200:
+                print(f"Successful S3 put_object response. Status - {status}")
+            else:
+                print(f"Unsuccessful S3 put_object response. Status - {status}")
+            rows_imported += len(flights)
+            print("Data imported successful")
+
+    except Exception as e:
+        print("Data load error: " + str(e))
+
+@asset(group_name="hackernews", required_resource_keys={"s3"})
+def upload_minutes(minutes: pd.DataFrame) -> None:
+
+    # Get API Keys
+    content = open('D:/dagster_project/config.json')
+    config = json.load(content)
+    access_key = config['access_key']
+    secret_access_key = config['secret_access_key']
+
+    try:
+        rows_imported = 0
+        # save to s3
+        upload_file_bucket = 'dagstertest2'
+        upload_file = 'minutes/' + f"minutes"
+        filepath =  upload_file + ".csv"
+        
+        s3_client = boto3.client('s3', aws_access_key_id=access_key, aws_secret_access_key=secret_access_key,region_name='us-east-2')
+        with io.StringIO() as csv_buffer:
+            minutes.to_csv(csv_buffer, index=False, header=False)
+
+            response = s3_client.put_object(
+                Bucket=upload_file_bucket, Key=filepath, Body=csv_buffer.getvalue()
+            )
+
+            status = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+
+            if status == 200:
+                print(f"Successful S3 put_object response. Status - {status}")
+            else:
+                print(f"Unsuccessful S3 put_object response. Status - {status}")
+            rows_imported += len(minutes)
+            print("Data imported successful")
+
+    except Exception as e:
+        print("Data load error: " + str(e))
